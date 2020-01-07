@@ -57,6 +57,7 @@ int startswith(_In_ const char* a, _In_ const char* b) {
 void help(const char* argv0, const char* preprint, int exitcode) {
 	if (preprint) {
 		fputs(preprint, stderr);
+		fputc('\n', stderr);
 	}
 	fputs("teesocket: Read from socket input and write to multiple socket output\n", stderr);
 	fputs("Written by Anthony Lee", stderr);
