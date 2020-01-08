@@ -15,8 +15,8 @@
  *  limitations under the License.
  */
 
-#ifndef TEESOCKET_H
-#define TEESOCKET_H
+#ifndef SHAREFUNC_H
+#define SHAREFUNC_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,35 +24,20 @@ extern "C" {
 	
 #include <stdio.h>
 
-enum __tee_conntype {
-	INCOMING,
-	OUTGOING
+struct sharefunc {
+	void* (*func)(void *);
+	char* funcname;
+	struct sharefunc* next;
 };
 
-enum __tee_socktype {
-	INET,
-	UNIX,
-	RFILE,
-	STDFD
-};
+extern struct sharefunc* create_sharefunc_table();
+extern void push_sharefunc_table(struct sharefunc* ptable, void* (*func)(void *), char* funcname);
+extern void* pop_sharefunc_table(struct sharefunc* ptable, char* funcname);
+extern void* enum_sharefunc_table(struct sharefunc* ptable, char* funcname);
+extern void destory_sharefunc_table(struct sharefunc* ptable);
 
-struct config {
-	char* income;
-	char* outgo;
-	char** shell_argv;
-	int maxfdsize;
-	int incomefd;
-	enum __tee_socktype incometype;
-	int outgofd;
-	enum __tee_socktype outgotype;
-};
-
-
-extern void teesocket_init(const struct config* conf);
-extern int callback_teesocket_incoming(int clientnum, const void* data, size_t length);
-extern void teesocket_outgoing(const void* data, size_t length);
 
 #ifdef __cplusplus
 }
 #endif
-#endif // TEESOCKET_H
+#endif // SHAREFUNC_H
