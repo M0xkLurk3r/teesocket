@@ -32,33 +32,12 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
+#include "teesocket.h"
+
 #define MAXFDSIZE 64
 
 #define _In_
 #define _Out_
-
-enum conntype {
-	INCOMING,
-	OUTGOING
-};
-
-enum socktype {
-	INET,
-	UNIX,
-	RFILE,
-	STDFD
-};
-
-struct config {
-	char* income;
-	char* outgo;
-	char** shell_argv;
-	int maxfdsize;
-	int incomefd;
-	enum socktype incometype;
-	int outgofd;
-	enum socktype outgotype;
-};
 
 static int PREKILL_SOCKFD = -1;
 
@@ -146,8 +125,8 @@ socklen_t unwrap_protocol_to_sockaddr(_In_	const char* protostr,
 
 // WARN: Will proceed socket connect in the period
 int resolve_config_to_fd(_In_	const char* protostr, 
-						 _In_	enum conntype ctype,
-						 _Out_	enum socktype* stype,
+						 _In_	enum __tee_conntype ctype,
+						 _Out_	enum __tee_socktype* stype,
 						 _Out_	struct sockaddr* saddr,
 						 _Out_	socklen_t* socklen) {
 	*socklen = unwrap_protocol_to_sockaddr(protostr, saddr);
@@ -174,8 +153,8 @@ int resolve_config_to_fd(_In_	const char* protostr,
 }
 
 int resolve_fd_and_perform_link_on(_In_	const char* protostr, 
-								   _In_	enum conntype ctype,
-								   _Out_ enum socktype* stype) {
+								   _In_	enum __tee_conntype ctype,
+								   _Out_ enum __tee_socktype* stype) {
 	uint8_t buf[256];
 	memset(buf, 0x00, 256);
 	struct sockaddr* saddr = (struct sockaddr *)buf;	// store data on buf
