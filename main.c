@@ -59,10 +59,10 @@ void help(const char* argv0, const char* preprint, int exitcode) {
 	fputs("teesocket: Read from socket input and write to multiple socket output\n", stderr);
 	fputs("Written by Anthony Lee", stderr);
 	fprintf(stderr, "Usage: [%s] [args] ...\n", argv0);
-	fputs("\t-i --in\t\tIncoming handle\n", stderr);
+	fputs("\t-i[0,6] --in=[0,6]\t\tIncoming handle, we allows 0~6 input handle\n", stderr);
 	fputs("\t-o --out\tOutgoing handle\n", stderr);
 	fputs("\t-m --multi\tMaximum incoming connection I could allow\n", stderr);
-	fputs("\t-l --loadso\tAlternative shared object (default is ${LD_LIBRARY_PATH}/libteesocket.so)\n", stderr);
+	fputs("\t-l --loadso\tAlternative shared object (default is ${librarypath}/libteesocket.so)\n", stderr);
 	fputs("\t-h --help\tShow this help\n", stderr);
 	fputc('\n', stderr);
 	exit(exitcode);
@@ -73,8 +73,23 @@ void resolve_argv(_Out_ struct config *conf,
 				  _In_ char* argv[]) {
 	// FUCK GETOPT(3), almost rape my mind
 	for (int argvp = 1; argvp < argc; argvp++) {
-		if ((startswith(argv[argvp], "-i") || startswith(argv[argvp], "--in")) && (argvp + 1) < argc) {
-			conf->income = argv[argvp + 1];
+		if ((startswith(argv[argvp], "-i0") || startswith(argv[argvp], "--in=0")) && (argvp + 1) < argc) {
+			conf->income0 = argv[argvp + 1];
+		}
+		if ((startswith(argv[argvp], "-i1") || startswith(argv[argvp], "--in=1")) && (argvp + 1) < argc) {
+			conf->income1 = argv[argvp + 1];
+		}
+		if ((startswith(argv[argvp], "-i2") || startswith(argv[argvp], "--in=2")) && (argvp + 1) < argc) {
+			conf->income2 = argv[argvp + 1];
+		}
+		if ((startswith(argv[argvp], "-i3") || startswith(argv[argvp], "--in=3")) && (argvp + 1) < argc) {
+			conf->income3 = argv[argvp + 1];
+		}
+		if ((startswith(argv[argvp], "-i4") || startswith(argv[argvp], "--in=4")) && (argvp + 1) < argc) {
+			conf->income4 = argv[argvp + 1];
+		}
+		if ((startswith(argv[argvp], "-i5") || startswith(argv[argvp], "--in=5")) && (argvp + 1) < argc) {
+			conf->income5 = argv[argvp + 1];
 		}
 		if ((startswith(argv[argvp], "-o") || startswith(argv[argvp], "--out")) && (argvp + 1) < argc) {
 			conf->outgo = argv[argvp + 1];
@@ -89,7 +104,8 @@ void resolve_argv(_Out_ struct config *conf,
 			help(argv[0], NULL, 0);
 		}
 	}
-	if (!conf->income || !conf->outgo) {
+	if (!conf->income0 || !conf->outgo) {
+		// We need at least one input and valid output
 		help(argv[0], "ERROR: argument expected.", 1);
 	}
 	if (!conf->maxfdsize) {
@@ -193,7 +209,24 @@ int largefdnum(_In_ const int fdarr[], _In_ int fdarrlen) {
 
 void resolve_config_to_fds(_In_ _Out_ struct config* conf) {
 	// now proceed income
-	conf->incomefd = resolve_fd_and_perform_link_on(conf->income, INCOMING, &conf->incometype);
+	if (conf->income0) {
+		conf->incomefd[0] = resolve_fd_and_perform_link_on(conf->income0, INCOMING, &conf->incometype[0]);
+	}
+	if (conf->income1) {
+		conf->incomefd[1] = resolve_fd_and_perform_link_on(conf->income1, INCOMING, &conf->incometype[1]);
+	}
+	if (conf->income2) {
+		conf->incomefd[2] = resolve_fd_and_perform_link_on(conf->income2, INCOMING, &conf->incometype[2]);
+	}
+	if (conf->income3) {
+		conf->incomefd[3] = resolve_fd_and_perform_link_on(conf->income3, INCOMING, &conf->incometype[3]);
+	}
+	if (conf->income4) {
+		conf->incomefd[4] = resolve_fd_and_perform_link_on(conf->income4, INCOMING, &conf->incometype[4]);
+	}
+	if (conf->income0) {
+		conf->incomefd[0] = resolve_fd_and_perform_link_on(conf->income0, INCOMING, &conf->incometype[0]);
+	}
 	conf->outgofd = resolve_fd_and_perform_link_on(conf->outgo, OUTGOING, &conf->outgotype);
 }
 
@@ -231,11 +264,12 @@ void teesocket_event_loop(_In_ const struct config* conf,
 	int*		peersfds = (int *) malloc(sizeof(int) * conf->maxfdsize);
 	int			peersfdslen = 2;
 	int			internalfdlen = 0;
+	int			incomefdlen = 0;
 	fd_set		peersfdset;
 	uint8_t*	shared_buf = (uint8_t *) malloc(sizeof(uint8_t) * 32768);
 	uint8_t*	shared_buf1 = (uint8_t *) malloc(sizeof(uint8_t) * 32768);
 	
-	peersfds[0] = conf->incomefd;
+	peersfds[0] = conf->incomefd[0];
 	peersfds[1] = conf->outgofd;
 	FD_ZERO(&peersfdset);
 	FD_SET(peersfds[0], &peersfdset);
@@ -246,6 +280,14 @@ void teesocket_event_loop(_In_ const struct config* conf,
 	FD_SET(pipefdsout[0], &peersfdset);
 	++peersfdslen;
 	
+	for (int i = 1; i < 6; i++) {
+		if (conf->incomefd[i] > 0) {
+			peersfds[i + 2] = conf->incomefd[i];
+			FD_SET(conf->incomefd[i], &peersfdset);
+			++peersfdslen;
+		}
+	}
+	
 	// store current fdlen
 	internalfdlen = peersfdslen;
 	
@@ -255,24 +297,26 @@ void teesocket_event_loop(_In_ const struct config* conf,
 								   &rtfdset, NULL, NULL, NULL);
 		int incoming_readlen = 0;
 		if (select_result > 0) {
-			if (FD_ISSET(peersfds[0], &rtfdset)) {
-				int recv_readlen = read(peersfds[0], shared_buf, 32768);
-				write(pipefdsin[32], shared_buf, recv_readlen);
+			for (int i = 0; i < 6; i++) {
+				if (FD_ISSET(conf->incomefd[i], &rtfdset)) {
+					int recv_readlen = read(conf->incomefd[i], shared_buf, 32768);
+					write(pipefdsin[32 + i], shared_buf, recv_readlen);
+				}
 			}
 			if (FD_ISSET(pipefdsout[0], &rtfdset)) {
 				incoming_readlen = read(pipefdsout[0], shared_buf1, 32768);
 			}
 			
 			if (conf->outgotype == RFILE || conf->outgotype == STDFD) {
-				if (FD_ISSET(peersfds[1], &rtfdset) && incoming_readlen > 0) {
-					write(peersfds[1], shared_buf1, incoming_readlen);
+				if (FD_ISSET(conf->outgofd, &rtfdset) && incoming_readlen > 0) {
+					write(conf->outgofd, shared_buf1, incoming_readlen);
 				}
 			} else {
-				if (FD_ISSET(peersfds[1], &rtfdset)) {
+				if (FD_ISSET(conf->outgofd, &rtfdset)) {
 					// TODO: Perform accept()
 					struct sockaddr addr;
 					socklen_t len;
-					int peersfd = accept(peersfds[1], &addr, &len);
+					int peersfd = accept(conf->outgofd, &addr, &len);
 					if (peersfdslen >= conf->maxfdsize) {
 						// maximum connection reached, 
 						// ignore further incoming connection
@@ -354,12 +398,14 @@ int main(int argc, char *argv[]) {
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGTERM, &sa, NULL);
 	
+	memset(&conf, 0x00, sizeof(struct config));
+	
 	loginit(argv[0], log_extract_type("stderr"));
 	logprintf("Starts TEESocket\n");
 	resolve_argv(&conf, argc, argv);
-	internal_init(&conf, pipefdsin, pipefdsout);
 	register_extern_library(&conf, pipefdsin, pipefdsout);
 	resolve_config_to_fds(&conf);
+	internal_init(&conf, pipefdsin, pipefdsout);
 	teesocket_event_loop(&conf, pipefdsin, pipefdsout);
 	return 0;
 }

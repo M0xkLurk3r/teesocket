@@ -37,13 +37,18 @@ enum __tee_socktype {
 };
 
 struct config {
-	char* income;
+	char* income0;
+	char* income1;
+	char* income2;
+	char* income3;
+	char* income4;
+	char* income5;
 	char* outgo;
 	char** shell_argv;
 	char* teesopath;
 	int maxfdsize;
-	int incomefd;
-	enum __tee_socktype incometype;
+	int incomefd[6];
+	enum __tee_socktype incometype[6];
 	int outgofd;
 	enum __tee_socktype outgotype;
 };
