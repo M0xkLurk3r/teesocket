@@ -209,6 +209,9 @@ int largefdnum(_In_ const int fdarr[], _In_ int fdarrlen) {
 
 void resolve_config_to_fds(_In_ _Out_ struct config* conf) {
 	// now proceed income
+	for (int i = 0; i < 6; i++) {
+		conf->incomefd[i] = -1;
+	}
 	if (conf->income0) {
 		conf->incomefd[0] = resolve_fd_and_perform_link_on(conf->income0, INCOMING, &conf->incometype[0]);
 	}
@@ -225,7 +228,7 @@ void resolve_config_to_fds(_In_ _Out_ struct config* conf) {
 		conf->incomefd[4] = resolve_fd_and_perform_link_on(conf->income4, INCOMING, &conf->incometype[4]);
 	}
 	if (conf->income0) {
-		conf->incomefd[0] = resolve_fd_and_perform_link_on(conf->income0, INCOMING, &conf->incometype[0]);
+		conf->incomefd[5] = resolve_fd_and_perform_link_on(conf->income0, INCOMING, &conf->incometype[5]);
 	}
 	conf->outgofd = resolve_fd_and_perform_link_on(conf->outgo, OUTGOING, &conf->outgotype);
 }
@@ -281,10 +284,11 @@ void teesocket_event_loop(_In_ const struct config* conf,
 	++peersfdslen;
 	
 	for (int i = 1; i < 6; i++) {
-		if (conf->incomefd[i] > 0) {
+		if (conf->incomefd[i] >= 0) {
 			peersfds[i + 2] = conf->incomefd[i];
 			FD_SET(conf->incomefd[i], &peersfdset);
 			++peersfdslen;
+			++incomefdlen;
 		}
 	}
 	
@@ -297,7 +301,7 @@ void teesocket_event_loop(_In_ const struct config* conf,
 								   &rtfdset, NULL, NULL, NULL);
 		int incoming_readlen = 0;
 		if (select_result > 0) {
-			for (int i = 0; i < 6; i++) {
+			for (int i = 0; i < incomefdlen; i++) {
 				if (FD_ISSET(conf->incomefd[i], &rtfdset)) {
 					int recv_readlen = read(conf->incomefd[i], shared_buf, 32768);
 					write(pipefdsin[32 + i], shared_buf, recv_readlen);
@@ -361,10 +365,12 @@ void internal_init(_In_ struct config* conf, _Out_ int pipefdsin[], _Out_ int pi
 		// fill with -1 first
 		pipefdsin[i] = -1;
 	}
-	int p[2] = {0};
-	pipe(p);
-	pipefdsin[0] = p[0];
-	pipefdsin[32] = p[1];
+	for (int i = 0; conf->incomefd[i] >=0 && i < 6; i++) {
+		int p[2] = {0};
+		pipe(p);
+		pipefdsin[i] = p[0];
+		pipefdsin[i + 32] = p[1];
+	}
 	pipe(pipefdsout);	// Should add more in the future
 }
 
