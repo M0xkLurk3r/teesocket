@@ -15,42 +15,19 @@
  *  limitations under the License.
  */
 
-#ifndef TEESOCKET_H
-#define TEESOCKET_H
+#ifndef TEESOCKSDK_H
+#define TEESOCKSDK_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <stdio.h>
-	
-enum __tee_conntype {
-	INCOMING,
-	OUTGOING
-};
+#include "teesocket.h"
 
-enum __tee_socktype {
-	INET,
-	UNIX,
-	RFILE,
-	STDFD
-};
-
-struct config {
-	char* income;
-	char* outgo;
-	char** shell_argv;
-	char* teesopath;
-	int maxfdsize;
-	int incomefd;
-	enum __tee_socktype incometype;
-	int outgofd;
-	enum __tee_socktype outgotype;
-};
-
-extern void teesocket_init(const struct config* conf, const int pipesin[], const int pipesout[]);
+extern void __real_teesocket_init(struct config* conf, const int pipesin[], const int pipesout[]);
+extern void __real_callback_peers_spawn(int peersfd);
 
 #ifdef __cplusplus
 }
 #endif
-#endif // TEESOCKET_H
+#endif // TEESOCKSDK_H

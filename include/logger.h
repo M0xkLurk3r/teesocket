@@ -15,40 +15,31 @@
  *  limitations under the License.
  */
 
-#ifndef TEESOCKET_H
-#define TEESOCKET_H
+#ifndef LOGGER_H
+#define LOGGER_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <stdio.h>
+#include <string.h>
 	
-enum __tee_conntype {
-	INCOMING,
-	OUTGOING
+enum logtype {
+	STDOUT,
+	STDERR,
+	LOGCAT,
+	KLOG
 };
 
-enum __tee_socktype {
-	INET,
-	UNIX,
-	RFILE,
-	STDFD
-};
+#define log_extract_type(type) !strcmp((type), "stdout") ?	\
+					STDOUT : (!strcmp((type), "stderr") ?	\
+					STDERR : (!strcmp((type), "logcat") ?	\
+					LOGCAT : (!strcmp((type), "klog") ?		\
+					KLOG : STDERR)))	// default to stderr
 
-struct config {
-	char* income;
-	char* outgo;
-	char** shell_argv;
-	char* teesopath;
-	int maxfdsize;
-	int incomefd;
-	enum __tee_socktype incometype;
-	int outgofd;
-	enum __tee_socktype outgotype;
-};
+extern void loginit(char* prefix, enum logtype type);
 
-extern void teesocket_init(const struct config* conf, const int pipesin[], const int pipesout[]);
+extern void logprintf(const char* fmt, ...);
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,48 @@
+[Buildset]
+BuildItems=@Variant(\x00\x00\x00\t\x00\x00\x00\x00\x01\x00\x00\x00\x0b\x00\x00\x00\x00\x01\x00\x00\x00\x12\x00t\x00e\x00e\x00s\x00o\x00c\x00k\x00e\x00t)
+
+[CMake]
+Build Directory Count=1
+Current Build Directory Index-Host System=0
+
+[CMake][CMake Build Directory 0]
+Build Directory Path=/home/anthony/projects/teesocket/build
+Build Type=Debug
+CMake Binary=/usr/bin/cmake
+CMake Executable=/usr/bin/cmake
+Environment Profile=
+Extra Arguments=
+Install Directory=/usr/local
+Runtime=Host System
+
+[Launch]
+Launch Configurations=Launch Configuration 0
+
+[Launch][Launch Configuration 0]
+Configured Launch Modes=execute
+Configured Launchers=nativeAppLauncher
+Name=teesocket
+Type=Native Application
+
+[Launch][Launch Configuration 0][Data]
+Arguments=-i - -o tcp://127.0.0.1:10001 -m 64
+Debugger Shell=
+Dependencies=@Variant(\x00\x00\x00\t\x00\x00\x00\x00\x01\x00\x00\x00\x0b\x00\x00\x00\x00\x02\x00\x00\x00\x12\x00t\x00e\x00e\x00s\x00o\x00c\x00k\x00e\x00t\x00\x00\x00\x12\x00t\x00e\x00e\x00s\x00o\x00c\x00k\x00e\x00t)
+Dependency Action=Build
+Display Demangle Names=true
+Display Static Members=false
+EnvironmentGroup=
+Executable=file:///home/anthony/projects/teesocket
+External Terminal=konsole --noclose --workdir %workdir -e %exe
+GDB Path=
+Project Target=teesocket,teesocket
+Remote GDB Config Script=
+Remote GDB Run Script=
+Remote GDB Shell Script=
+Start With=GdbConsole
+Use External Terminal=false
+Working Directory=
+isExecutable=false
+
+[Project]
+VersionControlSupport=
