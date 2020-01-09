@@ -35,6 +35,7 @@
 
 #include "teesocket.h"
 #include "teesocket_internal.h"
+#include "dumbsdk.h"
 // #include "shbuf.h"
 
 #include "logger.h"
@@ -196,13 +197,17 @@ void resolve_config_to_fds(_In_ _Out_ struct config* conf) {
 	conf->outgofd = resolve_fd_and_perform_link_on(conf->outgo, OUTGOING, &conf->outgotype);
 }
 
-void register_default_external_library(_In_ struct config* conf, _In_ const int pipefds[]) {
+void register_default_external_library(_In_ struct config* conf,
+									   _In_ const int pipefdsin[],
+									   _In_ const int pipefdsout[]) {
 	// TODO: We should probably implement a one-way pass function of teesocket_init()...
-	
+	__real_teesocket_init = __dumb_teesocket_init;
+	extern_teesocket_init(conf, &pipefdsin[0], &pipefdsout[1]);
 }	
 
 void register_extern_library(_In_ struct config* conf, 
-							 _In_ const int pipefds[]) {
+							 _In_ const int pipefdsin[],
+							 _In_ const int pipefdsout[]) {
 	char* so_path = conf->teesopath;
 	if (!so_path) {
 		so_path = "libteesocket.so";
@@ -211,17 +216,18 @@ void register_extern_library(_In_ struct config* conf,
 	if (teeso_handle) {
 		__real_teesocket_init = dlsym(teeso_handle, "__real_teesocket_init");
 		if (__real_teesocket_init) {
-			extern_teesocket_init(conf, &pipefds[0], &pipefds[32]);
+			extern_teesocket_init(conf, &pipefdsin[0], &pipefdsout[1]);
 			return;
 		}
 	}
 	// TODO: Pass a default `__real_teesocket_init' function (could also be implemented of us)
 	// 		 to make the workflow work.
-	register_default_external_library(conf, pipefds);
+	register_default_external_library(conf, pipefdsin, pipefdsout);
 }
 
 void teesocket_event_loop(_In_ const struct config* conf, 
-						  _In_ const int pipefds[]) {
+						  _In_ const int pipefdsin[],
+						  _In_ const int pipefdsout[]) {
 	int*		peersfds = (int *) malloc(sizeof(int) * conf->maxfdsize);
 	int			peersfdslen = 2;
 	int			internalfdlen = 0;
@@ -236,11 +242,10 @@ void teesocket_event_loop(_In_ const struct config* conf,
 	FD_SET(peersfds[1], &peersfdset);
 	
 	// Add available pipe readfd to array
-	for (int i = 0; pipefds[i] != -1; i++) {
-		peersfds[i + 2] = pipefds[i];
-		FD_SET(pipefds[i], &peersfdset);
-		++ peersfdslen;
-	}
+	peersfds[2] = pipefdsout[0];
+	FD_SET(pipefdsout[0], &peersfdset);
+	++peersfdslen;
+	
 	// store current fdlen
 	internalfdlen = peersfdslen;
 	
@@ -252,10 +257,10 @@ void teesocket_event_loop(_In_ const struct config* conf,
 		if (select_result > 0) {
 			if (FD_ISSET(peersfds[0], &rtfdset)) {
 				int recv_readlen = read(peersfds[0], shared_buf, 32768);
-				write(pipefds[32], shared_buf, recv_readlen);
+				write(pipefdsin[32], shared_buf, recv_readlen);
 			}
-			if (FD_ISSET(pipefds[0], &rtfdset)) {
-				incoming_readlen = read(pipefds[0], shared_buf1, 32768);
+			if (FD_ISSET(pipefdsout[0], &rtfdset)) {
+				incoming_readlen = read(pipefdsout[0], shared_buf1, 32768);
 			}
 			
 			if (conf->outgotype == RFILE || conf->outgotype == STDFD) {
@@ -303,19 +308,20 @@ void teesocket_event_loop(_In_ const struct config* conf,
 	}
 }
 
-void internal_init(_In_ struct config* conf, _Out_ int pipefds[]) {
+void internal_init(_In_ struct config* conf, _Out_ int pipefdsin[], _Out_ int pipefdsout[]) {
 	/* 
 	 * Based on current implementation, we just have one input.
 	 * So we just alloc one pipe.
 	 */
 	for (int i = 0; i < 64; i++) {
 		// fill with -1 first
-		pipefds[i] = -1;
+		pipefdsin[i] = -1;
 	}
 	int p[2] = {0};
 	pipe(p);
-	pipefds[0] = p[0];
-	pipefds[32] = p[1];
+	pipefdsin[0] = p[0];
+	pipefdsin[32] = p[1];
+	pipe(pipefdsout);	// Should add more in the future
 }
 
 void int_handler(int sig, void *s, void* u) {
@@ -328,11 +334,13 @@ int main(int argc, char *argv[]) {
 	struct config conf;
 	/**
 	 * Allows up to 32 peers; first 32 elements were pipe(2)'s read end,
-	 * the 32th element was write end.
-	 * If further requirements asks me to allow splitting output, i'll
-	 * extend more fds after pipefds[32]
+	 * the 32th element was write end, those fds should be mapped as one-to-one.
 	 */
-	int pipefds[64] = {0};
+	int pipefdsin[64] = {0};
+	/**
+	 * Output fds allows up to 1 peers.
+	 */
+	int pipefdsout[2] = {0};
 	/*
 	 * Capture SIGPIPE, SIGINT and SIGTERM.
 	 * SIGPIPE just pay no action to it,
@@ -349,9 +357,9 @@ int main(int argc, char *argv[]) {
 	loginit(argv[0], log_extract_type("stderr"));
 	logprintf("Starts TEESocket\n");
 	resolve_argv(&conf, argc, argv);
-	internal_init(&conf, pipefds);
-	register_extern_library(&conf, pipefds);
+	internal_init(&conf, pipefdsin, pipefdsout);
+	register_extern_library(&conf, pipefdsin, pipefdsout);
 	resolve_config_to_fds(&conf);
-	teesocket_event_loop(&conf, pipefds);
+	teesocket_event_loop(&conf, pipefdsin, pipefdsout);
 	return 0;
 }
