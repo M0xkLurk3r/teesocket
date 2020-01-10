@@ -173,6 +173,8 @@ int resolve_config_to_fd(_In_	const char* protostr,
 		*stype = sock_family == AF_INET ? INET : UNIX;
 		int sockfd = socket(sock_family, SOCK_STREAM, 
 					  sock_family == AF_INET ? IPPROTO_TCP : 0 /* 0 for UNIX protocol */);
+		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+		setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int));
 		PREKILL_SOCKFD = sockfd;
 		return sockfd;
 	}
@@ -319,7 +321,7 @@ void teesocket_event_loop(_In_ const struct config* conf,
 				if (FD_ISSET(conf->outgofd, &rtfdset)) {
 					// TODO: Perform accept()
 					struct sockaddr addr;
-					socklen_t len;
+					socklen_t len = 0;
 					int peersfd = accept(conf->outgofd, &addr, &len);
 					if (peersfdslen >= conf->maxfdsize) {
 						// maximum connection reached, 
