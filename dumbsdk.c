@@ -16,8 +16,8 @@ typedef struct _worker_thread_data {
 void* routine(void* data) {
 	worker_thread_data* tdata = (worker_thread_data *) data;
 	struct config*	conf = tdata->conf;
-	const int*			pipesin = tdata->pipesin;
-	const int*			pipesout = tdata->pipesout;
+	const int*		pipesin = tdata->pipesin;
+	const int*		pipesout = tdata->pipesout;
 	void*			routine_buf = malloc(32768);
 	
 	free(tdata);
