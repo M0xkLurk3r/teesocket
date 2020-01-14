@@ -24,8 +24,22 @@ extern "C" {
 
 #include "teesocket.h"
 
-extern void __real_teesocket_init(struct config* conf, const int pipesin[], const int pipesout[]);
-extern void __real_callback_peers_spawn(int peersfd);
+extern void __real_teesocket_init(int host_argc, char* host_argv[]);
+
+static void (*__real_teesocket_init_ptr)(int host_argc, char* host_argv[]);
+#define extern_teesocket_init(host_argc, host_argv)	(*__real_teesocket_init_ptr)((host_argc), (host_argv))
+
+static size_t (*__real_on_teesocket_read_ready_ptr)(int, const void*, const size_t);
+#define extern_on_teesocket_read_ready(clientid, buffer, length) \
+		(*__real_on_teesocket_read_ready_ptr)((clientid), (buffer), (length))
+
+static size_t (*__real_on_teesocket_write_ready_ptr)(int, const void*, const size_t);
+#define extern_on_teesocket_write_ready(clientid, buffer, maxlen) \
+		(*__real_on_teesocket_write_ready_ptr)((clientid), (buffer), (maxlen))
+
+static size_t (*__real_on_teesocket_new_peers_ptr)(const void*, const size_t);
+#define extern_on_teesocket_new_peers(buffer, maxlen) \
+		(*__real_on_teesocket_new_peers_ptr)((buffer), (maxlen))
 
 #ifdef __cplusplus
 }

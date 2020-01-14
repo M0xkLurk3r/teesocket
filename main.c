@@ -35,8 +35,7 @@
 
 #include "teesocket.h"
 #include "teesocket_internal.h"
-#include "dumbsdk.h"
-// #include "shbuf.h"
+#include "teesocksdk.h"
 
 #include "logger.h"
 
@@ -57,13 +56,13 @@ void help(const char* argv0, const char* preprint, int exitcode) {
 		fputc('\n', stderr);
 	}
 	fputs("teesocket: Read from socket input and write to multiple socket output\n", stderr);
-	fputs("Written by Anthony Lee", stderr);
+	fputs("Written by Anthony Lee\n", stderr);
 	fprintf(stderr, "Usage: [%s] [args] ...\n", argv0);
-	fputs("\t-i[0,6] --in=[0,6]\t\tIncoming handle, we allows 0~6 input handle\n", stderr);
-	fputs("\t-o --out\tOutgoing handle\n", stderr);
-	fputs("\t-m --multi\tMaximum incoming connection I could allow\n", stderr);
-	fputs("\t-l --loadso\tAlternative shared object (default is ${librarypath}/libteesocket.so)\n", stderr);
-	fputs("\t-h --help\tShow this help\n", stderr);
+	fputs("\t-i[0,6] --in=[0,6]\tIncoming handle, we allows 0~6 input handle\n", stderr);
+	fputs("\t-o --out\t\tOutgoing handle\n", stderr);
+	fputs("\t-m --multi\t\tMaximum incoming connection I could allow\n", stderr);
+	fputs("\t-l --loadso\t\tAlternative shared object (default is ${librarypath}/libteesocket.so)\n", stderr);
+	fputs("\t-h --help\t\tShow this help\n", stderr);
 	fputc('\n', stderr);
 	exit(exitcode);
 }
@@ -229,61 +228,115 @@ void resolve_config_to_fds(_In_ _Out_ struct config* conf) {
 	if (conf->income4) {
 		conf->incomefd[4] = resolve_fd_and_perform_link_on(conf->income4, INCOMING, &conf->incometype[4]);
 	}
-	if (conf->income0) {
-		conf->incomefd[5] = resolve_fd_and_perform_link_on(conf->income0, INCOMING, &conf->incometype[5]);
+	if (conf->income5) {
+		conf->incomefd[5] = resolve_fd_and_perform_link_on(conf->income5, INCOMING, &conf->incometype[5]);
 	}
 	conf->outgofd = resolve_fd_and_perform_link_on(conf->outgo, OUTGOING, &conf->outgotype);
 }
 
-void register_default_external_library(_In_ struct config* conf,
-									   _In_ const int pipefdsin[],
-									   _In_ const int pipefdsout[]) {
-	// TODO: We should probably implement a one-way pass function of teesocket_init()...
-	__real_teesocket_init = __dumb_teesocket_init;
-	extern_teesocket_init(conf, &pipefdsin[0], &pipefdsout[1]);
-}	
-
-void register_extern_library(_In_ struct config* conf, 
-							 _In_ const int pipefdsin[],
-							 _In_ const int pipefdsout[]) {
+void register_extern_library(_In_ struct config* conf, int argc, char* argv[]) {
 	char* so_path = conf->teesopath;
 	if (!so_path) {
 		so_path = "libteesocket.so";
 	}
 	void* teeso_handle = dlopen(so_path, RTLD_LAZY);
 	if (teeso_handle) {
-		__real_teesocket_init = dlsym(teeso_handle, "__real_teesocket_init");
-		if (__real_teesocket_init) {
-			extern_teesocket_init(conf, &pipefdsin[0], &pipefdsout[1]);
+		__real_teesocket_init_ptr = dlsym(teeso_handle, "on_teesocket_libinit");
+		if (__real_teesocket_init_ptr) {
+			__real_on_teesocket_new_peers_ptr = dlsym(teeso_handle, "on_teesocket_new_peers");
+			__real_on_teesocket_read_ready_ptr = dlsym(teeso_handle, "on_teesocket_read_ready");
+			__real_on_teesocket_write_ready_ptr = dlsym(teeso_handle, "on_teesocket_write_ready");
+			const char* (*shname)() = dlsym(teeso_handle, "TEESOCKET_MODULE_NAME");
+			const char* (*shver)() = dlsym(teeso_handle, "TEESOCKET_MODULE_VER");
+			logprintf("external library %s ver %s loaded\n", (*shname)(), (*shver)());
+			extern_teesocket_init(argc, argv);
 			return;
+		} else {
+			logprintf("ERROR while loading libteesocket.so: %s\n", dlerror());
+			exit(1);
 		}
+	} else {
+		logprintf("ERROR while loading libteesocket.so: %s\n", dlerror());
+		exit(1);
 	}
-	// TODO: Pass a default `__real_teesocket_init' function (could also be implemented of us)
-	// 		 to make the workflow work.
-	register_default_external_library(conf, pipefdsin, pipefdsout);
 }
 
-void teesocket_event_loop(_In_ const struct config* conf, 
-						  _In_ const int pipefdsin[],
-						  _In_ const int pipefdsout[]) {
+int write_to_peers(_In_ _Out_ void* shared_buf, 
+				   _In_ const int peersfds[], 
+				   _In_ int internalfdlen, 
+				   _In_ int peersfdslen) {
+	size_t proceed_len = extern_on_teesocket_write_ready(0, shared_buf, 65536);
+	if (proceed_len > 0) {
+		for (int i = internalfdlen; i < peersfdslen; i++) {
+			write(peersfds[i], shared_buf, proceed_len);
+		}
+	}
+	return (proceed_len == 65536);
+}
+
+/* for socket only */
+int accept_peers(_In_ int outgofd, 
+				 _In_ int maxfdsize, 
+				 _In_ _Out_ int* peersfdslen, 
+				 _In_ int peersfds[], 
+				 _Out_ fd_set* peersfdset, 
+				 _In_ _Out_ void* shared_buf) {
+	struct sockaddr addr;
+	socklen_t len = 0;
+	int peersfd = accept(outgofd, &addr, &len);
+	if ((*peersfdslen) >= maxfdsize) {
+		// maximum connection reached, 
+		// ignore further incoming connection
+		close(peersfd);
+	} else {
+		if (peersfd > 0) {
+			FD_SET(peersfd, peersfdset);
+			peersfds[(*peersfdslen)] = peersfd;
+			++(*peersfdslen);
+		}
+		size_t proceed_len = extern_on_teesocket_new_peers(shared_buf, 65536);
+		if (proceed_len > 0) {
+			// Write initial data
+			write(peersfd, shared_buf, proceed_len);
+		}
+	}
+	return 0;
+}
+
+int check_and_pop_peers(_In_ int internalfdlen, 
+						_In_ _Out_ int* peersfdslen, 
+						_In_ int peersfds[], 
+						_In_ fd_set* rtfdset, 
+						_Out_ fd_set* peersfdset) {
+	for (int i = internalfdlen; i < (*peersfdslen); i++) {
+		if (FD_ISSET(peersfds[i], rtfdset)) {
+			char tmpread;
+			int rsize = read(peersfds[i], &tmpread, 1);
+			if (rsize == 0) {
+				// We should close this connection
+				close(peersfds[i]);
+				FD_CLR(peersfds[i], peersfdset);
+				peersfds[i] = peersfds[(*peersfdslen) - 1];
+				--(*peersfdslen);	// like std::vector::pop()
+			}
+		}
+	}
+	return 0;
+}
+
+void teesocket_event_loop(_In_ const struct config* conf) {
 	int*		peersfds = (int *) malloc(sizeof(int) * conf->maxfdsize);
 	int			peersfdslen = 2;
 	int			internalfdlen = 0;
-	int			incomefdlen = 0;
+	int			incomefdlen = 1;	// at least we have one
 	fd_set		peersfdset;
-	uint8_t*	shared_buf = (uint8_t *) malloc(sizeof(uint8_t) * 32768);
-	uint8_t*	shared_buf1 = (uint8_t *) malloc(sizeof(uint8_t) * 32768);
+	uint8_t*	shared_buf = (uint8_t *) malloc(sizeof(uint8_t) * 65536);
 	
 	peersfds[0] = conf->incomefd[0];
 	peersfds[1] = conf->outgofd;
 	FD_ZERO(&peersfdset);
 	FD_SET(peersfds[0], &peersfdset);
 	FD_SET(peersfds[1], &peersfdset);
-	
-	// Add available pipe readfd to array
-	peersfds[2] = pipefdsout[0];
-	FD_SET(pipefdsout[0], &peersfdset);
-	++peersfdslen;
 	
 	for (int i = 1; i < 6; i++) {
 		if (conf->incomefd[i] >= 0) {
@@ -299,81 +352,54 @@ void teesocket_event_loop(_In_ const struct config* conf,
 	
 	for (;;) {
 		fd_set rtfdset = peersfdset;
+		struct timeval tv_time = {
+			.tv_sec = 0,
+			.tv_usec = 500
+		};
+		struct timeval* tv = NULL;
 		int select_result = select(largefdnum(peersfds, peersfdslen) + 1, 
-								   &rtfdset, NULL, NULL, NULL);
-		int incoming_readlen = 0;
+								   &rtfdset, NULL, NULL, tv);
 		if (select_result > 0) {
 			for (int i = 0; i < incomefdlen; i++) {
 				if (FD_ISSET(conf->incomefd[i], &rtfdset)) {
-					int recv_readlen = read(conf->incomefd[i], shared_buf, 32768);
-					write(pipefdsin[32 + i], shared_buf, recv_readlen);
+					int recv_readlen = read(conf->incomefd[i], shared_buf, 65536);
+					// TODO: perform read() operation
+					size_t readlen = extern_on_teesocket_read_ready(i, shared_buf, recv_readlen);
 				}
 			}
-			if (FD_ISSET(pipefdsout[0], &rtfdset)) {
-				incoming_readlen = read(pipefdsout[0], shared_buf1, 32768);
-			}
-			
 			if (conf->outgotype == RFILE || conf->outgotype == STDFD) {
-				if (FD_ISSET(conf->outgofd, &rtfdset) && incoming_readlen > 0) {
-					write(conf->outgofd, shared_buf1, incoming_readlen);
+				if (FD_ISSET(conf->outgofd, &rtfdset)) {
+					size_t proceed_len = extern_on_teesocket_write_ready(0, shared_buf, 65536);
+					if (proceed_len > 0) {
+						write(conf->outgofd, shared_buf, proceed_len);
+					}
 				}
 			} else {
 				if (FD_ISSET(conf->outgofd, &rtfdset)) {
 					// TODO: Perform accept()
-					struct sockaddr addr;
-					socklen_t len = 0;
-					int peersfd = accept(conf->outgofd, &addr, &len);
-					if (peersfdslen >= conf->maxfdsize) {
-						// maximum connection reached, 
-						// ignore further incoming connection
-						close(peersfd);
-					} else {
-						if (peersfd > 0) {
-							FD_SET(peersfd, &peersfdset);
-							peersfds[peersfdslen] = peersfd;
-							++peersfdslen;
-						}
-					}
+					accept_peers(conf->outgofd, conf->maxfdsize, &peersfdslen, 
+								 peersfds, &peersfdset, shared_buf);
 				}
-				for (int i = internalfdlen; i < peersfdslen; i++) {
-					if (FD_ISSET(peersfds[i], &rtfdset)) {
-						char tmpread;
-						int rsize = read(peersfds[i], &tmpread, 1);
-						if (rsize == 0) {
-							// We should close this connection
-							close(peersfds[i]);
-							FD_CLR(peersfds[i], &peersfdset);
-							peersfds[i] = peersfds[peersfdslen - 1];
-							--peersfdslen;	// like std::vector::pop()
-						}
-					}
+				check_and_pop_peers(internalfdlen, &peersfdslen, 
+									peersfds, &rtfdset, &peersfdset);
+				if (write_to_peers(shared_buf, peersfds, internalfdlen, peersfdslen)) {
+					tv = &tv_time;
+				} else {
+					tv = NULL;
 				}
-				if (incoming_readlen > 0) {
-					for (int i = internalfdlen; i < peersfdslen; i++) {
-						write(peersfds[i], shared_buf1, incoming_readlen);
-					}
-				}
+			}
+		} else if (select_result == 0) {
+			if (! write_to_peers(shared_buf, peersfds, internalfdlen, peersfdslen)) {
+				tv = NULL;
+			} else {
+				tv = &tv_time;
 			}
 		}
 	}
 }
 
-void internal_init(_In_ struct config* conf, _Out_ int pipefdsin[], _Out_ int pipefdsout[]) {
-	/* 
-	 * Based on current implementation, we just have one input.
-	 * So we just alloc one pipe.
-	 */
-	for (int i = 0; i < 64; i++) {
-		// fill with -1 first
-		pipefdsin[i] = -1;
-	}
-	for (int i = 0; conf->incomefd[i] >=0 && i < 6; i++) {
-		int p[2] = {0};
-		pipe(p);
-		pipefdsin[i] = p[0];
-		pipefdsin[i + 32] = p[1];
-	}
-	pipe(pipefdsout);	// Should add more in the future
+void internal_init(_In_ struct config* conf) {
+	
 }
 
 void int_handler(int sig, void *s, void* u) {
@@ -384,15 +410,6 @@ void int_handler(int sig, void *s, void* u) {
 
 int main(int argc, char *argv[]) {
 	struct config conf;
-	/**
-	 * Allows up to 32 peers; first 32 elements were pipe(2)'s read end,
-	 * the 32th element was write end, those fds should be mapped as one-to-one.
-	 */
-	int pipefdsin[64] = {0};
-	/**
-	 * Output fds allows up to 1 peers.
-	 */
-	int pipefdsout[2] = {0};
 	/*
 	 * Capture SIGPIPE, SIGINT and SIGTERM.
 	 * SIGPIPE just pay no action to it,
@@ -411,9 +428,9 @@ int main(int argc, char *argv[]) {
 	loginit(argv[0], log_extract_type("stderr"));
 	logprintf("Starts TEESocket\n");
 	resolve_argv(&conf, argc, argv);
-	register_extern_library(&conf, pipefdsin, pipefdsout);
+	register_extern_library(&conf, argc, argv);
 	resolve_config_to_fds(&conf);
-	internal_init(&conf, pipefdsin, pipefdsout);
-	teesocket_event_loop(&conf, pipefdsin, pipefdsout);
+	internal_init(&conf);
+	teesocket_event_loop(&conf);
 	return 0;
 }

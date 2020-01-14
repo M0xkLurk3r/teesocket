@@ -23,9 +23,35 @@ extern "C" {
 #endif
 	
 #include <stdio.h>
+	
+enum __tee_conntype {
+	INCOMING,
+	OUTGOING
+};
 
-static void (*__real_teesocket_init)(struct config*, const int*, const int*);
-#define extern_teesocket_init(a, b, c)	(*__real_teesocket_init)((a), (b), (c))
+enum __tee_socktype {
+	INET,
+	UNIX,
+	RFILE,
+	STDFD
+};
+
+struct config {
+	char* income0;
+	char* income1;
+	char* income2;
+	char* income3;
+	char* income4;
+	char* income5;
+	char* outgo;
+	char** shell_argv;
+	char* teesopath;
+	int maxfdsize;
+	int incomefd[6];
+	enum __tee_socktype incometype[6];
+	int outgofd;
+	enum __tee_socktype outgotype;
+};
 
 #ifdef __cplusplus
 }

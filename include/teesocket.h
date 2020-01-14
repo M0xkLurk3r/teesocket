@@ -23,37 +23,12 @@ extern "C" {
 #endif
 
 #include <stdio.h>
-	
-enum __tee_conntype {
-	INCOMING,
-	OUTGOING
-};
 
-enum __tee_socktype {
-	INET,
-	UNIX,
-	RFILE,
-	STDFD
-};
+extern size_t on_teesocket_read_ready(int clientid, const void* buffer, const size_t length);
+extern size_t on_teesocket_write_ready(int clientid, void* buffer, const size_t maxlen);
+extern size_t on_teesocket_new_peers(void* buffer, const size_t maxlen);
 
-struct config {
-	char* income0;
-	char* income1;
-	char* income2;
-	char* income3;
-	char* income4;
-	char* income5;
-	char* outgo;
-	char** shell_argv;
-	char* teesopath;
-	int maxfdsize;
-	int incomefd[6];
-	enum __tee_socktype incometype[6];
-	int outgofd;
-	enum __tee_socktype outgotype;
-};
-
-extern void teesocket_init(const struct config* conf, const int pipesin[], const int pipesout[]);
+extern void on_teesocket_libinit(int host_argc, char* host_argv[]);
 
 #ifdef __cplusplus
 }
