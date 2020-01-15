@@ -23,9 +23,9 @@ extern "C" {
 #endif
 
 #include <stdio.h>
-
-extern size_t on_teesocket_read_ready(int clientid, const void* buffer, const size_t length);
-extern size_t on_teesocket_write_ready(int clientid, void* buffer, const size_t maxlen);
+extern size_t on_teesocket_back_read_ready(int clientid, const void* buffer, const size_t length);
+extern size_t on_teesocket_peers_write_ready(int clientid, void* buffer, const size_t maxlen);
+extern size_t on_teesocket_peers_read_ready(int clientid, const void* buffer, const size_t length);
 extern size_t on_teesocket_new_peers(void* buffer, const size_t maxlen);
 
 extern void on_teesocket_libinit(int host_argc, char* host_argv[]);
