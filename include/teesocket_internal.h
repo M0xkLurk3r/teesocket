@@ -25,7 +25,7 @@ extern "C" {
 #include <stdio.h>
 	
 enum __tee_conntype {
-	INCOMING,
+	INCOMING = 0,
 	OUTGOING
 };
 
@@ -51,6 +51,7 @@ struct config {
 	enum __tee_socktype incometype[6];
 	int outgofd;
 	enum __tee_socktype outgotype;
+	enum __tee_conntype outgodirect;
 };
 
 #ifdef __cplusplus

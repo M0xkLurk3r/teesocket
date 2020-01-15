@@ -58,10 +58,11 @@ void help(const char* argv0, const char* preprint, int exitcode) {
 	fputs("teesocket: Read from socket input and write to multiple socket output\n", stderr);
 	fputs("Written by Anthony Lee\n", stderr);
 	fprintf(stderr, "Usage: [%s] [args] ...\n", argv0);
-	fputs("\t-i[0,6] --in=[0,6]\tIncoming handle, we allows 0~6 input handle\n", stderr);
+	fputs("\t-i[0,5] --in=[0,5]\tIncoming handle, we allows 0~5 input handle\n", stderr);
 	fputs("\t-o --out\t\tOutgoing handle\n", stderr);
 	fputs("\t-m --multi\t\tMaximum incoming connection I could allow\n", stderr);
 	fputs("\t-l --loadso\t\tAlternative shared object (default is ${librarypath}/libteesocket.so)\n", stderr);
+	fputs("\t-s --slave\t\tSlave mode.(connect to --out address instead of listen)\n", stderr);
 	fputs("\t-h --help\t\tShow this help\n", stderr);
 	fputc('\n', stderr);
 	exit(exitcode);
@@ -98,6 +99,10 @@ void resolve_argv(_Out_ struct config *conf,
 		}
 		if ((startswith(argv[argvp], "-l") || startswith(argv[argvp], "--loadso")) && (argvp + 1) < argc) {
 			conf->teesopath = argv[argvp + 1];
+		}
+		if (startswith(argv[argvp], "-s") || startswith(argv[argvp], "--slave")) {
+			conf->outgodirect = OUTGOING;
+			// Slave mode implements in the future
 		}
 		if ((startswith(argv[argvp], "-h") || startswith(argv[argvp], "--help"))) {
 			help(argv[0], NULL, 0);
@@ -188,9 +193,9 @@ int resolve_fd_and_perform_link_on(_In_	const char* protostr,
 	socklen_t socklen;
 	int openfd = resolve_config_to_fd(protostr, ctype, stype, saddr, &socklen);
 	if (openfd > 2) {
-		if (ctype == INCOMING) {
+		if (ctype == OUTGOING) {
 			connect(openfd, saddr, socklen);
-		} else if (ctype == OUTGOING) {
+		} else if (ctype == INCOMING) {
 			bind(openfd, saddr, socklen);
 			listen(openfd, 1);
 		}
@@ -214,24 +219,24 @@ void resolve_config_to_fds(_In_ _Out_ struct config* conf) {
 		conf->incomefd[i] = -1;
 	}
 	if (conf->income0) {
-		conf->incomefd[0] = resolve_fd_and_perform_link_on(conf->income0, INCOMING, &conf->incometype[0]);
+		conf->incomefd[0] = resolve_fd_and_perform_link_on(conf->income0, OUTGOING, &conf->incometype[0]);
 	}
 	if (conf->income1) {
-		conf->incomefd[1] = resolve_fd_and_perform_link_on(conf->income1, INCOMING, &conf->incometype[1]);
+		conf->incomefd[1] = resolve_fd_and_perform_link_on(conf->income1, OUTGOING, &conf->incometype[1]);
 	}
 	if (conf->income2) {
-		conf->incomefd[2] = resolve_fd_and_perform_link_on(conf->income2, INCOMING, &conf->incometype[2]);
+		conf->incomefd[2] = resolve_fd_and_perform_link_on(conf->income2, OUTGOING, &conf->incometype[2]);
 	}
 	if (conf->income3) {
-		conf->incomefd[3] = resolve_fd_and_perform_link_on(conf->income3, INCOMING, &conf->incometype[3]);
+		conf->incomefd[3] = resolve_fd_and_perform_link_on(conf->income3, OUTGOING, &conf->incometype[3]);
 	}
 	if (conf->income4) {
-		conf->incomefd[4] = resolve_fd_and_perform_link_on(conf->income4, INCOMING, &conf->incometype[4]);
+		conf->incomefd[4] = resolve_fd_and_perform_link_on(conf->income4, OUTGOING, &conf->incometype[4]);
 	}
 	if (conf->income5) {
-		conf->incomefd[5] = resolve_fd_and_perform_link_on(conf->income5, INCOMING, &conf->incometype[5]);
+		conf->incomefd[5] = resolve_fd_and_perform_link_on(conf->income5, OUTGOING, &conf->incometype[5]);
 	}
-	conf->outgofd = resolve_fd_and_perform_link_on(conf->outgo, OUTGOING, &conf->outgotype);
+	conf->outgofd = resolve_fd_and_perform_link_on(conf->outgo, conf->outgodirect, &conf->outgotype);
 }
 
 void register_extern_library(_In_ struct config* conf, int argc, char* argv[]) {
@@ -244,8 +249,9 @@ void register_extern_library(_In_ struct config* conf, int argc, char* argv[]) {
 		__real_teesocket_init_ptr = dlsym(teeso_handle, "on_teesocket_libinit");
 		if (__real_teesocket_init_ptr) {
 			__real_on_teesocket_new_peers_ptr = dlsym(teeso_handle, "on_teesocket_new_peers");
-			__real_on_teesocket_read_ready_ptr = dlsym(teeso_handle, "on_teesocket_read_ready");
-			__real_on_teesocket_write_ready_ptr = dlsym(teeso_handle, "on_teesocket_write_ready");
+			__real_on_teesocket_back_read_ready_ptr = dlsym(teeso_handle, "on_teesocket_back_read_ready");
+			__real_on_teesocket_peers_write_ready_ptr = dlsym(teeso_handle, "on_teesocket_peers_write_ready");
+			__real_on_teesocket_peers_read_ready_ptr = dlsym(teeso_handle, "on_teesocket_peers_read_ready");
 			const char* (*shname)() = dlsym(teeso_handle, "TEESOCKET_MODULE_NAME");
 			const char* (*shver)() = dlsym(teeso_handle, "TEESOCKET_MODULE_VER");
 			logprintf("external library %s ver %s loaded\n", (*shname)(), (*shver)());
@@ -265,7 +271,7 @@ int write_to_peers(_In_ _Out_ void* shared_buf,
 				   _In_ const int peersfds[], 
 				   _In_ int internalfdlen, 
 				   _In_ int peersfdslen) {
-	size_t proceed_len = extern_on_teesocket_write_ready(0, shared_buf, 65536);
+	size_t proceed_len = extern_on_teesocket_peers_write_ready(0, shared_buf, 65536);
 	if (proceed_len > 0) {
 		for (int i = internalfdlen; i < peersfdslen; i++) {
 			write(peersfds[i], shared_buf, proceed_len);
@@ -303,21 +309,24 @@ int accept_peers(_In_ int outgofd,
 	return 0;
 }
 
-int check_and_pop_peers(_In_ int internalfdlen, 
-						_In_ _Out_ int* peersfdslen, 
-						_In_ int peersfds[], 
-						_In_ fd_set* rtfdset, 
-						_Out_ fd_set* peersfdset) {
+int check_and_read_or_pop_peers(_In_ int internalfdlen, 
+								_In_ _Out_ int* peersfdslen, 
+								_In_ int peersfds[], 
+								_In_ fd_set* rtfdset, 
+								_Out_ fd_set* peersfdset,
+								_In_ _Out_ void* buffer) {
 	for (int i = internalfdlen; i < (*peersfdslen); i++) {
 		if (FD_ISSET(peersfds[i], rtfdset)) {
 			char tmpread;
-			int rsize = read(peersfds[i], &tmpread, 1);
-			if (rsize == 0) {
+			int rsize = read(peersfds[i], buffer, 65536);
+			if (rsize <= 0) {
 				// We should close this connection
 				close(peersfds[i]);
 				FD_CLR(peersfds[i], peersfdset);
 				peersfds[i] = peersfds[(*peersfdslen) - 1];
 				--(*peersfdslen);	// like std::vector::pop()
+			} else {
+				extern_on_teesocket_peers_read_ready(i, buffer, rsize);
 			}
 		}
 	}
@@ -364,12 +373,12 @@ void teesocket_event_loop(_In_ const struct config* conf) {
 				if (FD_ISSET(conf->incomefd[i], &rtfdset)) {
 					int recv_readlen = read(conf->incomefd[i], shared_buf, 65536);
 					// TODO: perform read() operation
-					size_t readlen = extern_on_teesocket_read_ready(i, shared_buf, recv_readlen);
+					size_t readlen = extern_on_teesocket_back_read_ready(i, shared_buf, recv_readlen);
 				}
 			}
 			if (conf->outgotype == RFILE || conf->outgotype == STDFD) {
 				if (FD_ISSET(conf->outgofd, &rtfdset)) {
-					size_t proceed_len = extern_on_teesocket_write_ready(0, shared_buf, 65536);
+					size_t proceed_len = extern_on_teesocket_peers_write_ready(0, shared_buf, 65536);
 					if (proceed_len > 0) {
 						write(conf->outgofd, shared_buf, proceed_len);
 					}
@@ -380,8 +389,8 @@ void teesocket_event_loop(_In_ const struct config* conf) {
 					accept_peers(conf->outgofd, conf->maxfdsize, &peersfdslen, 
 								 peersfds, &peersfdset, shared_buf);
 				}
-				check_and_pop_peers(internalfdlen, &peersfdslen, 
-									peersfds, &rtfdset, &peersfdset);
+				check_and_read_or_pop_peers(internalfdlen, &peersfdslen, 
+									peersfds, &rtfdset, &peersfdset, shared_buf);
 				if (write_to_peers(shared_buf, peersfds, internalfdlen, peersfdslen)) {
 					tv = &tv_time;
 				} else {

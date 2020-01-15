@@ -39,7 +39,10 @@ enum logtype {
 
 extern void loginit(char* prefix, enum logtype type);
 
+#ifndef __HAS_LOGGER_API_DEFINED
+#define __HAS_LOGGER_API_DEFINED
 extern void logprintf(const char* fmt, ...);
+#endif // __HAS_LOGGER_API_DEFINED
 
 #ifdef __cplusplus
 }
