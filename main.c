@@ -283,13 +283,11 @@ int write_to_peers(_In_ _Out_ void* shared_buf,
 /* for socket only */
 int accept_peers(_In_ int outgofd, 
 				 _In_ int maxfdsize, 
-				 _In_ _Out_ int* peersfdslen, 
+				 _In_ _Out_ int* peersfdslen,
 				 _In_ int peersfds[], 
 				 _Out_ fd_set* peersfdset, 
 				 _In_ _Out_ void* shared_buf) {
-	struct sockaddr addr;
-	socklen_t len = 0;
-	int peersfd = accept(outgofd, &addr, &len);
+	int peersfd = accept(outgofd, NULL, NULL);
 	if ((*peersfdslen) >= maxfdsize) {
 		// maximum connection reached, 
 		// ignore further incoming connection
