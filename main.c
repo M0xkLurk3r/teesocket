@@ -376,12 +376,19 @@ void teesocket_event_loop(_In_ const struct config* conf) {
 					size_t readlen = extern_on_teesocket_back_read_ready(i, shared_buf, recv_readlen);
 				}
 			}
-			if (conf->outgotype == RFILE || conf->outgotype == STDFD) {
-				if (FD_ISSET(conf->outgofd, &rtfdset)) {
-					size_t proceed_len = extern_on_teesocket_peers_write_ready(0, shared_buf, 65536);
-					if (proceed_len > 0) {
-						write(conf->outgofd, shared_buf, proceed_len);
+			if (conf->outgotype == RFILE || conf->outgotype == STDFD 
+				// Iff outgodirect == OUTGOING, we only have one fd and didn't need to accept(2) any longer
+				|| conf->outgodirect == OUTGOING) {
+				if ((conf->outgotype == INET || conf->outgotype == UNIX)
+				&&	FD_ISSET(conf->outgofd, &rtfdset)) {
+					size_t recv_readlen = read(conf->outgofd, shared_buf, 65536);
+					if (recv_readlen > 0) {
+						extern_on_teesocket_peers_read_ready(0, shared_buf, recv_readlen);
 					}
+				}
+				size_t proceed_len = extern_on_teesocket_peers_write_ready(0, shared_buf, 65536);
+				if (proceed_len > 0) {
+					write(conf->outgofd, shared_buf, proceed_len);
 				}
 			} else {
 				if (FD_ISSET(conf->outgofd, &rtfdset)) {
