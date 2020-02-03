@@ -37,11 +37,19 @@ enum logtype {
 					LOGCAT : (!strcmp((type), "klog") ?		\
 					KLOG : STDERR)))	// default to stderr
 
-extern void loginit(char* prefix, enum logtype type);
+extern void loginit(char* prefix, int loglvl, enum logtype type);
 
 #ifndef __HAS_LOGGER_API_DEFINED
 #define __HAS_LOGGER_API_DEFINED
-extern void logprintf(const char* fmt, ...);
+enum _loglvl {
+	LOGLVL_DEBUG = 0,
+	LOGLVL_INFO,
+	LOGLVL_WARN,
+	LOGLVL_ERR
+};
+
+extern void logprintf(int priority, const char* fmt, ...);
+extern void logprintf_info(const char* fmt, ...);
 #endif // __HAS_LOGGER_API_DEFINED
 
 #ifdef __cplusplus

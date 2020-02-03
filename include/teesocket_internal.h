@@ -52,6 +52,7 @@ struct config {
 	int outgofd;
 	enum __tee_socktype outgotype;
 	enum __tee_conntype outgodirect;
+	int loglevel;
 };
 
 #ifdef __cplusplus

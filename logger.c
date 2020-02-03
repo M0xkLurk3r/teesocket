@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <dlfcn.h>
 #include <syscall.h>
+#include <errno.h>
 
 static enum logtype LOGTYPE;
 static char* PREFIX;
@@ -11,9 +12,12 @@ static FILE* logstream;
 static int (* __ref_android_log_vprint)(int, const char*, const char *, va_list);
 #define ANDROIDLOG(prio, tag, fmt, ap) (*__ref_android_log_vprint)((prio), (tag), (fmt), (ap))
 
-void loginit(char* prefix, enum logtype type) {
+static int LOGLVL;
+
+void loginit(char* prefix, int loglvl, enum logtype type) {
 	PREFIX = prefix;
 	LOGTYPE = type;
+	LOGLVL = loglvl;
 	if (type == KLOG) {
 		// Open a stream to /dev/kmsg
 		logstream = fopen("/dev/kmsg", "w");
@@ -21,33 +25,39 @@ void loginit(char* prefix, enum logtype type) {
 			// fuck, why did i always met crook environment made by crazy geeks...
 			logstream = stderr;
 			type = STDERR;
+			int err = errno;
+			logprintf(LOGLVL_WARN, "WARN: [err %d, %s], logging fallback to stderr\n", 
+						err, strerror(err));
 		}
 	} else if (type == LOGCAT) {
 		// TODO: call dlopen() and dlsym() to load android's fucking logging function
 		void* liblog_handle = dlopen("liblog.so", RTLD_LAZY);
 		if (! liblog_handle) {
-			logstream = stderr;
-			type = STDERR;
+			goto android_logcat_error;
 		}
 		__ref_android_log_vprint = dlsym(liblog_handle, "__android_log_vprint");
 		if (! __ref_android_log_vprint) {
+			goto android_logcat_error;
+		}
+		return;
+		
+		android_logcat_error:
 			logstream = stderr;
 			type = STDERR;
-		}
+			logprintf(LOGLVL_WARN, "WARN: [%s], logging fallback to stderr\n", dlerror());
+			return;
 	} else {
 		logstream = type == STDOUT ? stdout : stderr;
 	}
 }
 
-void logprintf(const char* fmt, ...) {
+void logprintf(int priority, const char* fmt, ...) {
 	char fmtbuf[512] = "\0";
 	va_list ap;
 	va_start(ap, fmt);
 	switch (LOGTYPE) {
 		case LOGCAT:
-			ANDROIDLOG(
-				4, // default to ANDROID_LOG_INFO
-				PREFIX, fmt, ap);
+			ANDROIDLOG(priority + 3, PREFIX, fmt, ap);
 			break;
 		case KLOG:
 		case STDOUT:

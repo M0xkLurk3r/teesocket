@@ -31,9 +31,18 @@ extern size_t on_teesocket_new_peers(void* buffer, const size_t maxlen);
 extern void on_teesocket_libinit(int host_argc, char* host_argv[]);
 
 /* For libteesocket compatibility, we copied the declaration to here */
+
 #ifndef __HAS_LOGGER_API_DEFINED
 #define __HAS_LOGGER_API_DEFINED
-extern void logprintf(const char* fmt, ...);
+enum _loglvl {
+	LOGLVL_DEBUG = 0,
+	LOGLVL_INFO,
+	LOGLVL_WARN,
+	LOGLVL_ERR
+};
+
+extern void logprintf(int priority, const char* fmt, ...);
+extern void logprintf_info(const char* fmt, ...);
 #endif // __HAS_LOGGER_API_DEFINED
 
 
