@@ -52,6 +52,9 @@ void loginit(char* prefix, int loglvl, enum logtype type) {
 }
 
 void logprintf(int priority, const char* fmt, ...) {
+	if (priority < LOGLVL) {
+		return;
+	}
 	char fmtbuf[512] = "\0";
 	va_list ap;
 	va_start(ap, fmt);

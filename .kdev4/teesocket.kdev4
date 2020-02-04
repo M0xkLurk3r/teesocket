@@ -25,7 +25,7 @@ Name=teesocket
 Type=Native Application
 
 [Launch][Launch Configuration 0][Data]
-Arguments=-i0 - -o tcp://127.0.0.1:10001 -m 64 --slave
+Arguments=-i0 tcp://127.0.0.1:11000 -o tcp://127.0.0.1:10001 -m 64 --slave -l ../../teesocket_lib/build/libteesocket.so
 Debugger Shell=
 Dependencies=@Variant(\x00\x00\x00\t\x00\x00\x00\x00\x01\x00\x00\x00\x0b\x00\x00\x00\x00\x02\x00\x00\x00\x12\x00t\x00e\x00e\x00s\x00o\x00c\x00k\x00e\x00t\x00\x00\x00\x12\x00t\x00e\x00e\x00s\x00o\x00c\x00k\x00e\x00t)
 Dependency Action=Build

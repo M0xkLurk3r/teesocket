@@ -42,7 +42,7 @@ extern void loginit(char* prefix, int loglvl, enum logtype type);
 #ifndef __HAS_LOGGER_API_DEFINED
 #define __HAS_LOGGER_API_DEFINED
 enum _loglvl {
-	LOGLVL_DEBUG = 0,
+	LOGLVL_DEBUG = -1,
 	LOGLVL_INFO,
 	LOGLVL_WARN,
 	LOGLVL_ERR
