@@ -15,49 +15,18 @@
  *  limitations under the License.
  */
 
-#ifndef TEESOCKET_INTERNAL_H
-#define TEESOCKET_INTERNAL_H
+#ifndef DBGWAIT_H
+#define DBGWAIT_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-	
-#include <stdio.h>
-	
-enum __tee_conntype {
-	INCOMING = 0,
-	OUTGOING
-};
 
-enum __tee_socktype {
-	INET,
-	UNIX,
-	RFILE,
-	STDFD
-};
+extern void wait_for_debugger();
 
-struct config {
-	char* income0;
-	char* income1;
-	char* income2;
-	char* income3;
-	char* income4;
-	char* income5;
-	char* outgo;
-	char** shell_argv;
-	char* teesopath;
-	int maxfdsize;
-	int waitdbg;
-	int incomefd[6];
-	enum __tee_socktype incometype[6];
-	int outgofd;
-	enum __tee_socktype outgotype;
-	enum __tee_conntype outgodirect;
-	int loglevel;
-};
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif //TEESOCKET_INTERNAL_H
+#endif // DBGWAIT_H

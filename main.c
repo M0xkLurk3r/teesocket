@@ -36,6 +36,7 @@
 #include "teesocket.h"
 #include "teesocket_internal.h"
 #include "teesocksdk.h"
+#include "dbgwait.h"
 
 #include "logger.h"
 
@@ -64,6 +65,7 @@ void help(const char* argv0, const char* preprint, int exitcode) {
 	fputs("\t-m --multi\t\tMaximum incoming connection I could allow\n", stderr);
 	fputs("\t-l --loadso\t\tExternal library (default is <yourlibrarypath>/libteesocket.so)\n", stderr);
 	fputs("\t-s --slave\t\tSlave mode.(connect to --out address instead of listen)\n", stderr);
+	fputs("\t-d --debug\t\tWaiting for debugger and continue. (Useful to debugging external library)\n", stderr);
 	fputs("\t-ll --loglevel\t\tLogging level.\n", stderr);
 	fputs("\t\t\t\t0 -> All log verbosely output\n", stderr);
 	fputs("\t\t\t\t1 -> Print information, warning and error\n", stderr);
@@ -111,6 +113,9 @@ void resolve_argv(_Out_ struct config *conf,
 		}
 		if (startswith(argv[argvp], "-s") || startswith(argv[argvp], "--slave")) {
 			conf->outgodirect = OUTGOING;
+		}
+		if (startswith(argv[argvp], "-d") || startswith(argv[argvp], "--debug")) {
+			conf->waitdbg = 1;
 		}
 		if ((startswith(argv[argvp], "-h") || startswith(argv[argvp], "--help"))) {
 			help(argv[0], NULL, 0);
@@ -202,10 +207,19 @@ int resolve_fd_and_perform_link_on(_In_	const char* protostr,
 	int openfd = resolve_config_to_fd(protostr, ctype, stype, saddr, &socklen);
 	if (openfd > 2) {
 		if (ctype == OUTGOING) {
-			connect(openfd, saddr, socklen);
+			if (connect(openfd, saddr, socklen) == -1) {
+				logprintf(LOGLVL_ERR, "ERROR: connect: %s\n", strerror(errno));
+				exit(1);
+			}
 		} else if (ctype == INCOMING) {
-			bind(openfd, saddr, socklen);
-			listen(openfd, 1);
+			if (bind(openfd, saddr, socklen) == -1) {
+				logprintf(LOGLVL_ERR, "ERROR: bind: %s\n", strerror(errno));
+				exit(1);
+			}
+			if (listen(openfd, 1)) {
+				logprintf(LOGLVL_ERR, "ERROR: listen: %s\n", strerror(errno));
+				exit(1);
+			}
 		}
 	}
 	return openfd;
@@ -247,12 +261,18 @@ void resolve_config_to_fds(_In_ _Out_ struct config* conf) {
 	conf->outgofd = resolve_fd_and_perform_link_on(conf->outgo, conf->outgodirect, &conf->outgotype);
 }
 
-void register_extern_library(_In_ struct config* conf, int argc, char* argv[]) {
+void register_extern_library(_In_ struct config* conf) {
 	char* so_path = conf->teesopath;
 	if (!so_path) {
 		so_path = "libteesocket.so";
 	}
-	void* teeso_handle = dlopen(so_path, RTLD_LAZY);
+	void* teeso_handle = dlopen(so_path, 
+								conf->waitdbg ? RTLD_NOW : RTLD_LAZY
+								/* 
+								 * Probably causes bug ...
+								 * using better way to re-implement this
+								 */
+							   );
 	if (teeso_handle) {
 		__real_teesocket_init_ptr = dlsym(teeso_handle, "on_teesocket_libinit");
 		if (__real_teesocket_init_ptr) {
@@ -263,16 +283,19 @@ void register_extern_library(_In_ struct config* conf, int argc, char* argv[]) {
 			const char* (*shname)() = dlsym(teeso_handle, "TEESOCKET_MODULE_NAME");
 			const char* (*shver)() = dlsym(teeso_handle, "TEESOCKET_MODULE_VER");
 			logprintf(LOGLVL_INFO, "external library %s ver %s loaded\n", (*shname)(), (*shver)());
-			extern_teesocket_init(argc, argv);
 			return;
 		} else {
-			logprintf(LOGLVL_ERR, "ERROR while loading libteesocket.so: %s\n", dlerror());
+			logprintf(LOGLVL_ERR, "ERROR while parsing libteesocket.so: %s\n", dlerror());
 			exit(1);
 		}
 	} else {
-		logprintf(LOGLVL_ERR, "ERROR while loading libteesocket.so: %s\n", dlerror());
+		logprintf(LOGLVL_ERR, "ERROR while opening libteesocket.so: %s\n", dlerror());
 		exit(1);
 	}
+}
+
+void init_extern_library(_In_ int argc, _In_ char* argv[]) {
+	extern_teesocket_init(argc, argv);
 }
 
 int write_to_peers(_In_ _Out_ void* shared_buf, 
@@ -387,7 +410,9 @@ void teesocket_event_loop(_In_ const struct config* conf) {
 				if (FD_ISSET(conf->incomefd[i], &rtfdset)) {
 					int recv_readlen = read(conf->incomefd[i], shared_buf, BUFSIZE);
 					// TODO: perform read() operation
-					size_t readlen = extern_on_teesocket_back_read_ready(i, shared_buf, recv_readlen);
+					if (recv_readlen > 0) {
+						size_t readlen = extern_on_teesocket_back_read_ready(i, shared_buf, recv_readlen);
+					}
 				}
 			}
 			if (conf->outgotype == RFILE || conf->outgotype == STDFD 
@@ -432,6 +457,12 @@ void internal_init(_In_ struct config* conf) {
 	
 }
 
+void wait_my_debugger(_In_ struct config* conf) {
+	if (conf->waitdbg) {
+		wait_for_debugger();
+	}
+}
+
 void int_handler(int sig, void *s, void* u) {
 	/* Close open socket for sane */
 	close(PREKILL_SOCKFD);
@@ -458,7 +489,10 @@ int main(int argc, char *argv[]) {
 	resolve_argv(&conf, argc, argv);
 	loginit(argv[0], conf.loglevel, log_extract_type("stderr"));
 	logprintf(LOGLVL_INFO, "Starts TEESocket\n");
-	register_extern_library(&conf, argc, argv);
+	register_extern_library(&conf);
+	wait_my_debugger(&conf);
+	
+	init_extern_library(argc, argv);
 	resolve_config_to_fds(&conf);
 	internal_init(&conf);
 	teesocket_event_loop(&conf);
