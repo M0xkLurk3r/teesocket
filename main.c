@@ -58,16 +58,17 @@ void help(const char* argv0, const char* preprint, int exitcode) {
 		fputc('\n', stderr);
 	}
 	fputs("teesocket: Read from socket input and write to multiple socket output\n", stderr);
-	fputs("Written by Anthony Lee\n", stderr);
+	fputs("Written by Anthony Lee (https://github.com/M0xkLurk3r)\n", stderr);
 	fprintf(stderr, "Usage: [%s] [args] ...\n", argv0);
 	fputs("\t-i[0,5] --in=[0,5]\tIncoming handle, we allows 0~5 input handle\n", stderr);
 	fputs("\t-o --out\t\tOutgoing handle\n", stderr);
 	fputs("\t-m --multi\t\tMaximum incoming connection I could allow\n", stderr);
 	fputs("\t-l --loadso\t\tExternal library (default is <yourlibrarypath>/libteesocket.so)\n", stderr);
 	fputs("\t-s --slave\t\tSlave mode.(connect to --out address instead of listen)\n", stderr);
+	fputs("\t-qb --quit-on-break\tQuit on any link broke (except outgoing connection in master mode)\n", stderr);
 	fputs("\t-d --debug\t\tWaiting for debugger and continue. (Useful to debugging external library)\n", stderr);
 	fputs("\t-ll --loglevel\t\tLogging level.\n", stderr);
-	fputs("\t\t\t\t0 -> All log verbosely output\n", stderr);
+	fputs("\t\t\t\t0 -> All log print verbosely\n", stderr);
 	fputs("\t\t\t\t1 -> Print information, warning and error\n", stderr);
 	fputs("\t\t\t\t2 -> Print warning and error\n", stderr);
 	fputs("\t\t\t\t3 -> only error\n", stderr);
@@ -119,6 +120,9 @@ void resolve_argv(_Out_ struct config *conf,
 		}
 		if ((startswith(argv[argvp], "-h") || startswith(argv[argvp], "--help"))) {
 			help(argv[0], NULL, 0);
+		}
+		if ((startswith(argv[argvp], "-qb") || startswith(argv[argvp], "--quit-on-break"))) {
+			conf->quitonbreak = 1;
 		}
 	}
 	if (!conf->income0 || !conf->outgo) {
@@ -311,6 +315,10 @@ int write_to_peers(_In_ _Out_ void* shared_buf,
 	return (proceed_len == BUFSIZE);
 }
 
+static inline int sizevalid(size_t size) {
+	return (size > 0) && (size != -1);
+}
+
 /* for socket only */
 int accept_peers(_In_ int outgofd, 
 				 _In_ int maxfdsize, 
@@ -330,7 +338,7 @@ int accept_peers(_In_ int outgofd,
 			++(*peersfdslen);
 		}
 		size_t proceed_len = extern_on_teesocket_new_peers(shared_buf, BUFSIZE);
-		if (proceed_len > 0) {
+		if (sizevalid(proceed_len)) {
 			// Write initial data
 			write(peersfd, shared_buf, proceed_len);
 		}
@@ -348,7 +356,7 @@ int check_and_read_or_pop_peers(_In_ int internalfdlen,
 		if (FD_ISSET(peersfds[i], rtfdset)) {
 			char tmpread;
 			int rsize = read(peersfds[i], buffer, BUFSIZE);
-			if (rsize <= 0) {
+			if (sizevalid(rsize)) {
 				// We should close this connection
 				close(peersfds[i]);
 				FD_CLR(peersfds[i], peersfdset);
@@ -391,7 +399,7 @@ void teesocket_event_loop(_In_ const struct config* conf) {
 	// If we're working in slave mode, perform new_peers routine for one shot
 	if (conf->outgodirect == OUTGOING) {
 		size_t oneshot_newpeers_write_len = extern_on_teesocket_new_peers(shared_buf, BUFSIZE);
-		if (oneshot_newpeers_write_len > 0) {
+		if (sizevalid(oneshot_newpeers_write_len)) {
 			write(conf->outgofd, shared_buf, oneshot_newpeers_write_len);
 		}
 	}
@@ -410,8 +418,14 @@ void teesocket_event_loop(_In_ const struct config* conf) {
 				if (FD_ISSET(conf->incomefd[i], &rtfdset)) {
 					int recv_readlen = read(conf->incomefd[i], shared_buf, BUFSIZE);
 					// TODO: perform read() operation
-					if (recv_readlen > 0) {
+					if (sizevalid(recv_readlen)) {
 						size_t readlen = extern_on_teesocket_back_read_ready(i, shared_buf, recv_readlen);
+					} else {
+						logprintf(LOGLVL_WARN, "Incoming channel %d closed connection, lasterror = \"%s\"\n", i, strerror(errno));
+						if (conf->quitonbreak) {
+							logprintf(LOGLVL_WARN, "Quit on link break.\n");
+							exit(1);
+						}
 					}
 				}
 			}
@@ -421,8 +435,14 @@ void teesocket_event_loop(_In_ const struct config* conf) {
 				if ((conf->outgotype == INET || conf->outgotype == UNIX)
 				&&	FD_ISSET(conf->outgofd, &rtfdset)) {
 					size_t recv_readlen = read(conf->outgofd, shared_buf, BUFSIZE);
-					if (recv_readlen > 0) {
+					if (sizevalid(recv_readlen)) {
 						size_t readlen = extern_on_teesocket_peers_read_ready(0, shared_buf, recv_readlen);
+					} else {
+						logprintf(LOGLVL_WARN, "Outgoing channel closed connection, lasterror = \"%s\"\n", strerror(errno));
+						if (conf->quitonbreak) {
+							logprintf(LOGLVL_WARN, "Quit on link break.\n");
+							exit(1);
+						}
 					}
 				}
 				size_t proceed_len = extern_on_teesocket_peers_write_ready(0, shared_buf, BUFSIZE);
