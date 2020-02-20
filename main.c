@@ -52,6 +52,23 @@ int startswith(_In_ const char* a, _In_ const char* b) {
 	return a && b && strstr(a, b) == &a[0];
 }
 
+const char* strip_execprefix(const char* prefix) {
+	int real_start_offset = 0;
+	int p = 0;
+	for (;; p++) {
+		switch(prefix[p]) {
+			case '\0':
+				return &prefix[real_start_offset];
+			case '/':
+			case '.':
+			case '\\':
+				real_start_offset = p + 1;
+				break;
+		}
+	}
+	return &prefix[real_start_offset];
+}
+
 void help(const char* argv0, const char* preprint, int exitcode) {
 	if (preprint) {
 		fputs(preprint, stderr);
@@ -59,7 +76,7 @@ void help(const char* argv0, const char* preprint, int exitcode) {
 	}
 	fputs("teesocket: Read from socket input and write to multiple socket output\n", stderr);
 	fputs("Written by Anthony Lee (https://github.com/M0xkLurk3r)\n", stderr);
-	fprintf(stderr, "Usage: [%s] [args] ...\n", argv0);
+	fprintf(stderr, "Usage: [%s] [args] ...\n\n", argv0);
 	fputs("\t-i[0,5] --in=[0,5]\tIncoming handle, we allows 0~5 input handle\n", stderr);
 	fputs("\t-o --out\t\tOutgoing handle\n", stderr);
 	fputs("\t-m --multi\t\tMaximum incoming connection I could allow\n", stderr);
@@ -72,6 +89,8 @@ void help(const char* argv0, const char* preprint, int exitcode) {
 	fputs("\t\t\t\t1 -> Print information, warning and error\n", stderr);
 	fputs("\t\t\t\t2 -> Print warning and error\n", stderr);
 	fputs("\t\t\t\t3 -> only error\n", stderr);
+	fputs("\t-lt --log-to\t\tWrite log to (stderr, stdout, logcat, klog; defaults to stderr)\n", stderr);
+	fprintf(stderr, "\t-lp --log-prefix\tLog prefix (defaults to %s)\n", strip_execprefix(argv0));
 	fputs("\t-h --help\t\tShow this help\n", stderr);
 	fputc('\n', stderr);
 	exit(exitcode);
@@ -111,6 +130,12 @@ void resolve_argv(_Out_ struct config *conf,
 		}
 		if ((startswith(argv[argvp], "-ll") || startswith(argv[argvp], "--loglevel")) && (argvp + 1) < argc) {
 			conf->loglevel = atoi(argv[argvp + 1]);
+		}
+		if ((startswith(argv[argvp], "-lt") || startswith(argv[argvp], "--log-to")) && (argvp + 1) < argc) {
+			conf->logto = argv[argvp + 1];
+		}
+		if ((startswith(argv[argvp], "-lp") || startswith(argv[argvp], "--log-prefix")) && (argvp + 1) < argc) {
+			conf->logprefix = argv[argvp + 1];
 		}
 		if (startswith(argv[argvp], "-s") || startswith(argv[argvp], "--slave")) {
 			conf->outgodirect = OUTGOING;
@@ -507,7 +532,10 @@ int main(int argc, char *argv[]) {
 	memset(&conf, 0x00, sizeof(struct config));
 	
 	resolve_argv(&conf, argc, argv);
-	loginit(argv[0], conf.loglevel, log_extract_type("stderr"));
+	loginit(conf.logprefix ? conf.logprefix : argv[0], 
+			conf.loglevel, 
+			log_extract_type(conf.logto ? conf.logto : "stderr"));
+	
 	logprintf(LOGLVL_INFO, "Starts TEESocket\n");
 	register_extern_library(&conf);
 	wait_my_debugger(&conf);

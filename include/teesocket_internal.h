@@ -55,6 +55,8 @@ struct config {
 	enum __tee_conntype outgodirect;
 	int loglevel;
 	int quitonbreak;
+	char* logto;
+	char* logprefix;
 };
 
 #ifdef __cplusplus
