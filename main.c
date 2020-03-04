@@ -41,7 +41,7 @@
 #include "logger.h"
 
 #define MAXFDSIZE 64
-#define BUFSIZE 65536
+#define BUFSIZE 262144
 
 #define _In_
 #define _Out_
@@ -149,6 +149,9 @@ void resolve_argv(_Out_ struct config *conf,
 		if ((startswith(argv[argvp], "-qb") || startswith(argv[argvp], "--quit-on-break"))) {
 			conf->quitonbreak = 1;
 		}
+		if (startswith(argv[argvp], "-D")) {
+			putenv(&argv[argvp][2]);
+		}
 	}
 	if (!conf->income0 || !conf->outgo) {
 		// We need at least one input and valid output
@@ -188,6 +191,13 @@ socklen_t unwrap_protocol_to_sockaddr(_In_	const char* protostr,
 		saddr->sa_data[4] = '\0';
 		saddr->sa_family = 0xFF;
 		return sizeof(saddr->sa_family) + 4;
+	} else if (startswith(protostr, "fd://")) {
+		saddr->sa_data[0] = 'O';
+		saddr->sa_data[1] = 'P';
+		saddr->sa_data[2] = 'E';
+		saddr->sa_data[3] = 'N';
+		*((int *)(&saddr->sa_data[4])) = atoi(&protostr[5]);
+		return sizeof(saddr->sa_family) + sizeof(int) + 4;
 	} else if (!strcmp(protostr, "-") || !strcmp(protostr, "stdin")|| !strcmp(protostr, "stdout")) {
 		memset(saddr, 0xFF, sizeof(struct sockaddr));
 		return 1;
@@ -211,6 +221,12 @@ int resolve_config_to_fd(_In_	const char* protostr,
 		 && saddr->sa_data[3] == 'E') {
 			*stype = RFILE;
 			return open(&protostr[strlen("file://") + 1], ctype == INCOMING ? O_RDONLY : O_WRONLY);
+		} else if ( saddr->sa_data[0] == 'O'
+				&& saddr->sa_data[1] == 'P'
+				&& saddr->sa_data[2] == 'E'
+				&& saddr->sa_data[3] == 'N') {
+			int targetfd = *((int *)(&saddr->sa_data[4]));
+			return targetfd;
 		} else {
 			*stype = STDFD;
 			return ctype == INCOMING ? STDIN_FILENO : STDOUT_FILENO;
@@ -536,7 +552,7 @@ int main(int argc, char *argv[]) {
 			conf.loglevel, 
 			log_extract_type(conf.logto ? conf.logto : "stderr"));
 	
-	logprintf(LOGLVL_INFO, "Starts TEESocket\n");
+	logprintf(LOGLVL_INFO, "Starts TEESocket (pid %d)\n", getpid());
 	register_extern_library(&conf);
 	wait_my_debugger(&conf);
 	
