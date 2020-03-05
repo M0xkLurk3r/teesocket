@@ -32,6 +32,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <netdb.h>
 
 #include "teesocket.h"
 #include "teesocket_internal.h"
@@ -162,22 +163,44 @@ void resolve_argv(_Out_ struct config *conf,
 	}
 }
 
+void resolve_domain_name(const char* domain) {
+}
+
 socklen_t unwrap_protocol_to_sockaddr(_In_	const char* protostr, 
 									  _Out_	struct sockaddr* saddr) {
 	if (startswith(protostr, "tcp://")) { // e.g. tcp://192.168.1.1:22
 		// I ensure (*saddr) has declared as type `struct sockaddr_in`
 		struct sockaddr_in* saddrptr = (struct sockaddr_in *)saddr;
-		saddrptr->sin_family = AF_INET;
+		
+		struct addrinfo hints = {
+			.ai_family = AF_INET,
+			.ai_socktype = SOCK_STREAM,
+			.ai_protocol = IPPROTO_TCP
+		};
+		
+		struct addrinfo* result;
+
 		char buf[128] = "\0";
 		// strip out the protocol prefix (we got "192.168.1.1:22")
 		strcpy(buf, &protostr[6]);
 		char* portpos = strstr(buf, ":");
 		// Replace ':' to '\0'
 		*portpos = '\0';
-		saddrptr->sin_addr.s_addr = inet_addr(buf);	// we got "192.168.1.1"
-		// right shift the pointer and get the port number string (got "22")
-		saddrptr->sin_port = htons(atoi(&portpos[1]));
-		return sizeof(struct sockaddr_in);
+		char* domain_name = &buf[0];
+		char* port = &portpos[1];
+		
+		int addr_enum_result = getaddrinfo(domain_name, port, &hints, &result);
+		if (addr_enum_result != 0) {
+			logprintf(LOGLVL_ERR, "Could not resolve address tcp://%s:%s: %s\n", 
+					  domain_name, port, gai_strerror(addr_enum_result));
+			exit(1);
+		} else {
+			struct sockaddr_in* resultaddr = (struct sockaddr_in *) result->ai_addr;
+			*saddrptr = *resultaddr;
+			freeaddrinfo(result);
+			return sizeof(struct sockaddr_in);
+		}
+		
 	} else if (startswith(protostr, "unix://")) {
 		struct sockaddr_un* saddrptr = (struct sockaddr_un *)saddr;
 		saddrptr->sun_family = AF_UNIX;
